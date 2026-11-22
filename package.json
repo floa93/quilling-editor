@@ -1,0 +1,16 @@
+{
+  "name": "quilling-editor",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Browser-based editor for designing paper quilling artwork",
+  "type": "module",
+  "scripts": {
+    "start": "node scripts/serve.mjs",
+    "test": "node --test tests/",
+    "build": "node scripts/build.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "MIT"
+}
