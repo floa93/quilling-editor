@@ -1,10 +1,10 @@
 // Service worker: lets the installed app open offline.
 // Network-first: online users always get the latest deployment; the cache is only a fallback.
-const CACHE = 'quilling-editor-v1';
+const CACHE = 'quilling-editor-v2';
 const CORE = [
   './', 'index.html', 'styles.css', 'manifest.webmanifest', 'icons/icon.svg',
   'src/app.js', 'src/geometry.js', 'src/history.js', 'src/icons.js', 'src/model.js',
-  'src/renderer.js', 'src/storage.js', 'src/svg.js', 'src/templates.js', 'src/xml.js',
+  'src/renderer.js', 'src/storage.js', 'src/svg.js', 'src/templates.js', 'src/text.js', 'src/xml.js',
 ];
 
 self.addEventListener('install', (event) => {

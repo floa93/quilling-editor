@@ -14,6 +14,7 @@ database and no runtime dependencies. Your current design is auto-saved in the b
 
 - **Draw**: smoothed vector strokes with an optional paper-strip look, color palette plus custom color, strip width 1–20 px
 - **Shapes**: 12 quilling templates (tight/loose coil, teardrop, marquise, square, triangle, half moon, heart, leaf, S/C/V-scroll) by drag and drop or tap
+- **Text**: outlined, hollow letters to fill in with quilling (e.g. after printing): 7 fonts, bold, italic, as typed/UPPER/lower case, text size, letter width (how far the outline sits around each glyph) and letter spacing (gap between the outlines), multi-line text
 - **Edit**: select, shift-click/rubber-band multi-select, move, scale (Shift keeps the aspect ratio), rotate (Shift snaps to 15°), flip horizontally/vertically, recolor, duplicate, cut/copy/paste, z-order, delete, eraser; hover outlines and resize/rotate cursors show what a drag will do, and `Esc` cancels a drag
 - **Undo/redo** with 100 steps
 - **SVG export/import**: lossless round trip for the editor's own files; generic SVGs are imported as editable paths and sanitized first
@@ -25,7 +26,7 @@ database and no runtime dependencies. Your current design is auto-saved in the b
 
 | Action | Shortcut |
 | --- | --- |
-| Select / Draw / Eraser | `V` / `B` / `E` |
+| Select / Draw / Eraser / Text | `V` / `B` / `E` / `T` |
 | Undo / Redo | `Ctrl/Cmd+Z` / `Ctrl/Cmd+Shift+Z` or `Ctrl+Y` |
 | Delete | `Delete` / `Backspace` |
 | Duplicate / Cut / Copy / Paste | `Ctrl/Cmd+D` / `Ctrl/Cmd+X` / `Ctrl/Cmd+C` / `Ctrl/Cmd+V` |
@@ -61,6 +62,7 @@ src/app.js         editor controller: tools, gestures, panels, import/export UI
 src/renderer.js    renders the document and the selection overlay into the SVG canvas
 src/model.js       document/element model (immutable updates, transforms, z-order)
 src/templates.js   generators for the quilling shape templates
+src/text.js        text elements: fonts, outlined letter rendering, bounding boxes
 src/svg.js         SVG export, import (native + generic) and sanitizing
 src/xml.js         small strict XML parser used by the importer
 src/geometry.js    matrices, path parsing/flattening, smoothing, hit testing

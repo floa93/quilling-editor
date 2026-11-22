@@ -3,6 +3,7 @@ const P = {
   select: '<path d="M5 3l14 8-6.5 1.5L9.5 19z"/>',
   draw: '<path d="M4 20c2-1 3.5-4 6-4s2 3 4.5 3S19 15 20 13"/><path d="M14.5 4.5l5 5L12 17H7v-5z"/>',
   eraser: '<path d="M7 20h13"/><path d="M4.5 15.5l9-9a2 2 0 0 1 2.8 0l2.2 2.2a2 2 0 0 1 0 2.8L11 19H8z"/><path d="M9 11l5 5"/>',
+  text: '<path d="M5 7V5h14v2M12 5v14M9 19h6"/>',
   undo: '<path d="M9 14L4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-3"/>',
   redo: '<path d="M15 14l5-5-5-5"/><path d="M20 9H9a5 5 0 0 0 0 10h3"/>',
   delete: '<path d="M4 7h16"/><path d="M10 11v6M14 11v6"/><path d="M6 7l1 13h10l1-13"/><path d="M9 7V4h6v3"/>',

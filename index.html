@@ -28,6 +28,7 @@
           <button class="tool" data-tool="select" data-icon="select" title="Select (V)" aria-label="Select tool (V)"></button>
           <button class="tool" data-tool="draw" data-icon="draw" title="Draw (B)" aria-label="Draw tool (B)"></button>
           <button class="tool" data-tool="eraser" data-icon="eraser" title="Eraser (E)" aria-label="Eraser tool (E)"></button>
+          <button class="tool" data-tool="text" data-icon="text" title="Text (T): click the canvas to add outlined letters" aria-label="Text tool (T)"></button>
         </div>
 
         <div class="group" role="toolbar" aria-label="History">
@@ -97,10 +98,35 @@
 
       <aside id="properties" class="panel sheet" aria-label="Properties">
         <div class="sheet-header">
-          <h2>Strip</h2>
+          <h2 id="properties-title">Strip</h2>
           <button class="mobile-only" data-close data-icon="close" title="Close" aria-label="Close properties"></button>
         </div>
         <p class="selection-note" hidden></p>
+        <section id="text-settings" class="text-settings" hidden>
+          <textarea id="text-content" rows="2" maxlength="500" spellcheck="false" autocomplete="off" aria-label="Text" placeholder="Type letters or words"></textarea>
+          <div class="row">
+            <select id="text-font" aria-label="Font" title="Font"></select>
+          </div>
+          <div class="row toggles" role="group" aria-label="Text style">
+            <button type="button" id="text-bold" class="toggle" title="Bold" aria-label="Bold" aria-pressed="false"><b>B</b></button>
+            <button type="button" id="text-italic" class="toggle" title="Italic" aria-label="Italic" aria-pressed="false"><i>I</i></button>
+            <span class="toggle-sep" aria-hidden="true"></span>
+            <button type="button" class="toggle" data-case="none" title="As typed" aria-label="As typed" aria-pressed="true">Aa</button>
+            <button type="button" class="toggle" data-case="upper" title="UPPERCASE" aria-label="Uppercase" aria-pressed="false">AA</button>
+            <button type="button" class="toggle" data-case="lower" title="lowercase" aria-label="Lowercase" aria-pressed="false">aa</button>
+          </div>
+          <h3><label for="text-size">Text size</label> <output id="text-size-value">160 px</output></h3>
+          <div class="row tight">
+            <input type="range" id="text-size" min="20" max="600" step="1" value="160" title="Font size in px" />
+            <input type="number" id="text-size-number" min="8" max="1000" step="1" inputmode="numeric" aria-label="Text size in px" title="Font size in px (8–1000)" />
+          </div>
+          <h3><label for="text-grow">Letter width</label> <output id="text-grow-value">8 px</output></h3>
+          <input type="range" id="text-grow" min="0" max="60" step="1" value="8" title="How far the outline is drawn around each letter: wider letters leave more room to fill in" />
+          <h3><label for="text-spacing">Letter spacing</label> <output id="text-spacing-value">6 px</output></h3>
+          <input type="range" id="text-spacing" min="-60" max="150" step="1" value="6" title="Gap between the letter outlines (negative values let the letters merge)" />
+          <p class="hint">Letters are drawn hollow so you can fill them with coils, e.g. after printing. Color and strip width set the outline.</p>
+          <button type="button" id="text-add" class="wide" data-icon="text" title="Add a new text in the middle of the view"><span>Add text</span></button>
+        </section>
         <section>
           <h3>Color</h3>
           <div class="swatches" role="radiogroup" aria-label="Strip color"></div>
@@ -135,6 +161,7 @@
         <button class="tool" data-tool="select" data-icon="select" title="Select (V)" aria-label="Select tool"><span>Select</span></button>
         <button class="tool" data-tool="draw" data-icon="draw" title="Draw (B)" aria-label="Draw tool"><span>Draw</span></button>
         <button class="tool" data-tool="eraser" data-icon="eraser" title="Eraser (E)" aria-label="Eraser tool"><span>Erase</span></button>
+        <button class="tool" data-tool="text" data-icon="text" title="Text (T)" aria-label="Text tool"><span>Text</span></button>
         <button data-toggle="library" data-icon="shapes" title="Shape templates" aria-label="Shape templates" aria-expanded="false"><span>Shapes</span></button>
         <button data-toggle="properties" data-icon="style" title="Color and width" aria-label="Color and width" aria-expanded="false"><i class="color-dot" aria-hidden="true"></i><span>Style</span></button>
       </nav>
@@ -176,6 +203,7 @@
             <h3>Getting started</h3>
             <ul>
               <li><strong>Draw</strong> paper strips freehand, or drag a <strong>shape</strong> onto the canvas (tap/click places it in the center).</li>
+              <li><strong>Text</strong>: click the canvas to add outlined letters in different fonts and sizes. They are hollow and wide enough to fill in with quilling, e.g. after printing.</li>
               <li><strong>Select</strong> elements to move, scale (corner handles) and rotate (round handle). Color and strip width apply to the selection.</li>
               <li>Your design is saved in this browser automatically. <strong>Export SVG</strong> to keep a file you can import again later.</li>
             </ul>
@@ -192,7 +220,7 @@
           <section class="help-keys">
             <h3>Keyboard</h3>
             <table>
-              <tr><td>Select / Draw / Eraser</td><td><kbd>V</kbd> <kbd>B</kbd> <kbd>E</kbd></td></tr>
+              <tr><td>Select / Draw / Eraser / Text</td><td><kbd>V</kbd> <kbd>B</kbd> <kbd>E</kbd> <kbd>T</kbd></td></tr>
               <tr><td>Undo / Redo</td><td><kbd>Ctrl/⌘ Z</kbd> &nbsp;<kbd>Ctrl/⌘ Shift Z</kbd></td></tr>
               <tr><td>Cut / Copy / Paste</td><td><kbd>Ctrl/⌘ X</kbd> <kbd>C</kbd> <kbd>V</kbd></td></tr>
               <tr><td>Duplicate</td><td><kbd>Ctrl/⌘ D</kbd></td></tr>

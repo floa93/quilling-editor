@@ -17,8 +17,10 @@ import {
   DEFAULT_WIDTH,
   DEFAULT_HEIGHT,
   DEFAULT_BACKGROUND,
+  localBox,
 } from './model.js';
 import { TEMPLATE_IDS } from './templates.js';
+import { textNodes, maskIdFor } from './text.js';
 
 export const NS = 'urn:quilling-editor:1';
 export const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -94,6 +96,25 @@ export function exportSvg(doc) {
       `quill:pivot="${fmt(el.pivot[0])} ${fmt(el.pivot[1])}"`,
     ];
     if (el.base) attrs.push(`quill:base="${el.base.map(fmt).join(' ')}"`);
+    if (el.kind === 'text') {
+      const t = el.text;
+      attrs.push(
+        `quill:text="${escapeXml(t.content).replace(/\n/g, '&#10;')}"`,
+        `quill:font="${t.font}"`,
+        `quill:size="${fmt(t.size)}"`,
+        `quill:bold="${t.bold ? 1 : 0}"`,
+        `quill:italic="${t.italic ? 1 : 0}"`,
+        `quill:case="${t.case}"`,
+        `quill:grow="${fmt(t.grow)}"`,
+        `quill:spacing="${fmt(t.spacing)}"`,
+      );
+      lines.push(`  <g ${attrs.join(' ')}>`);
+      // Invisible bounding box: lets the editor restore the exact selection box on import.
+      lines.push(`    <path quill:role="bounds" d="${escapeXml(el.d)}" fill="none" stroke="none"/>`);
+      for (const spec of textNodes(el, maskIdFor(el.id), localBox(el))) lines.push(specToXml(spec, '    '));
+      lines.push('  </g>');
+      continue;
+    }
     lines.push(`  <g ${attrs.join(' ')}>`);
     for (const layer of strokeLayers(el)) {
       const parts = [
@@ -112,6 +133,15 @@ export function exportSvg(doc) {
   }
   lines.push('</svg>', '');
   return lines.join('\n');
+}
+
+/** Serializes a {name, attrs, children | text} description (see text.js). */
+function specToXml(spec, indent) {
+  const attrs = Object.entries(spec.attrs || {}).map(([k, v]) => ` ${k}="${escapeXml(v)}"`).join('');
+  if (spec.text != null) return `${indent}<${spec.name}${attrs}>${escapeXml(spec.text)}</${spec.name}>`;
+  if (!spec.children?.length) return `${indent}<${spec.name}${attrs}/>`;
+  const inner = spec.children.map((c) => specToXml(c, `${indent}  `)).join('\n');
+  return `${indent}<${spec.name}${attrs}>\n${inner}\n${indent}</${spec.name}>`;
 }
 
 // ---------------------------------------------------------------------------
@@ -229,6 +259,41 @@ function importNative(root, p) {
     }
     const type = attr(node, 'type');
     if (!type) continue;
+    if (type === 'text') {
+      const bounds = node.children.find((c) => c.type === 'element' && localName(c.name) === 'path' && attr(c, 'role') === 'bounds');
+      const content = attr(node, 'text');
+      if (typeof content !== 'string') {
+        skipped++;
+        continue;
+      }
+      const pivot = (attr(node, 'pivot') || '').split(/[\s,]+/).map(Number);
+      elements.push(
+        createElement({
+          id: sanitizeId(node.attrs.id),
+          kind: 'text',
+          d: bounds && isValidPath(bounds.attrs.d) ? bounds.attrs.d : undefined,
+          color: normalizeColor(attr(node, 'color'), '#000000'),
+          width: clamp(num(attr(node, 'width'), 3), 0, 200),
+          x: num(attr(node, 'x')),
+          y: num(attr(node, 'y')),
+          rotation: num(attr(node, 'rotation')),
+          sx: num(attr(node, 'sx'), 1) || 1,
+          sy: num(attr(node, 'sy'), 1) || 1,
+          pivot: pivot.length === 2 && pivot.every(Number.isFinite) ? pivot : null,
+          text: {
+            content,
+            font: attr(node, 'font'),
+            size: num(attr(node, 'size'), NaN),
+            bold: attr(node, 'bold') === '1',
+            italic: attr(node, 'italic') === '1',
+            case: attr(node, 'case'),
+            grow: num(attr(node, 'grow'), NaN),
+            spacing: num(attr(node, 'spacing'), NaN),
+          },
+        }),
+      );
+      continue;
+    }
     const strip = node.children.find((c) => c.type === 'element' && localName(c.name) === 'path' && attr(c, 'role') === 'strip')
       || node.children.find((c) => c.type === 'element' && localName(c.name) === 'path');
     if (!strip || !isValidPath(strip.attrs.d)) {

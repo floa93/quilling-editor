@@ -1,15 +1,29 @@
 // Renders the document into the live SVG canvas and draws the selection overlay.
 // Element nodes are cached per id and only touched when the element object changes.
 import { strokeLayers } from './svg.js';
-import { elementCorners, transformAttribute, unionBox, worldBox } from './model.js';
+import { elementCorners, transformAttribute, unionBox, worldBox, localBox } from './model.js';
 import { fmt } from './geometry.js';
+import { textNodes, glyphNode, maskIdFor } from './text.js';
 
 const SVGNS = 'http://www.w3.org/2000/svg';
+const XMLNS = 'http://www.w3.org/XML/1998/namespace';
 const svgEl = (name, attrs = {}) => {
   const n = document.createElementNS(SVGNS, name);
-  for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (k.startsWith('quill:')) continue; // export-only metadata
+    if (k === 'xml:space') n.setAttributeNS(XMLNS, k, v);
+    else n.setAttribute(k, v);
+  }
   return n;
 };
+
+/** Builds DOM nodes from a {name, attrs, children | text} description (see text.js). */
+function specToDom(spec) {
+  const n = svgEl(spec.name, spec.attrs);
+  if (spec.text != null) n.textContent = spec.text;
+  for (const c of spec.children || []) n.append(specToDom(c));
+  return n;
+}
 
 export class Renderer {
   constructor(svg) {
@@ -21,8 +35,9 @@ export class Renderer {
     this.live = svgEl('path', { class: 'live-stroke', fill: 'none', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' });
     this.ghost = svgEl('g', { class: 'drop-ghost' });
     this.overlay = svgEl('g', { class: 'overlay' });
+    this.measurer = svgEl('g', { visibility: 'hidden', 'aria-hidden': 'true' });
     this.viewport.append(this.shadow, this.artboard, this.layer, this.live, this.ghost);
-    svg.append(this.viewport, this.overlay);
+    svg.append(this.measurer, this.viewport, this.overlay);
     this.nodes = new Map(); // id -> {el, node}
     this.order = [];
   }
@@ -71,6 +86,20 @@ export class Renderer {
     }
   }
 
+  /** Measures the glyph box of a text element in local (unscaled) units, or null. */
+  measureText(el) {
+    const node = specToDom(glyphNode(el));
+    this.measurer.replaceChildren(node);
+    try {
+      const b = node.getBBox();
+      return b.width > 0 || b.height > 0 ? { x: b.x, y: b.y, width: b.width, height: b.height } : null;
+    } catch {
+      return null;
+    } finally {
+      node.remove();
+    }
+  }
+
   setLiveStroke(d, color, width) {
     if (!d) {
       this.live.removeAttribute('d');
@@ -84,7 +113,7 @@ export class Renderer {
   setGhost(el) {
     this.ghost.replaceChildren();
     if (el) {
-      const node = buildNode(el);
+      const node = buildNode(el, { ghost: true });
       node.setAttribute('opacity', '0.6');
       this.ghost.append(node);
     }
@@ -172,11 +201,18 @@ export function selectionFrame(elements) {
 
 function sameLook(a, b) {
   return a.d === b.d && a.color === b.color && a.width === b.width && a.fill === b.fill && a.paper === b.paper &&
-    a.base === b.base && a.pivot === b.pivot;
+    a.base === b.base && a.pivot === b.pivot && a.text === b.text;
 }
 
-export function buildNode(el) {
+let ghostCount = 0;
+
+export function buildNode(el, { ghost = false } = {}) {
   const g = svgEl('g', { transform: transformAttribute(el), 'data-id': el.id });
+  if (el.kind === 'text') {
+    const maskId = ghost ? `qghost-${++ghostCount}` : maskIdFor(el.id);
+    for (const spec of textNodes(el, maskId, localBox(el))) g.append(specToDom(spec));
+    return g;
+  }
   for (const layer of strokeLayers(el)) {
     const p = svgEl('path', {
       d: el.d,

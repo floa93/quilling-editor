@@ -14,6 +14,7 @@ import { exportSvg, importSvg, ImportError } from './svg.js';
 import { Renderer, selectionFrame, previewSvg } from './renderer.js';
 import { AutoSave } from './storage.js';
 import { installIcons } from './icons.js';
+import { FONTS, DEFAULT_TEXT, normalizeText, textBoxPath, estimateTextBox } from './text.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
@@ -36,6 +37,7 @@ class Editor {
     this.selection = [];
     this.tool = 'draw';
     this.style = { color: PALETTE[0], width: 4, paper: true };
+    this.textStyle = { ...DEFAULT_TEXT };
     this.view = { x: 0, y: 0, zoom: 1 };
     this.pointers = new Map();
     this.gesture = null;
@@ -57,6 +59,7 @@ class Editor {
     this.bindFiles();
     this.bindViewportResize();
     this.setTool('draw');
+    this.doc = this.measureTexts(this.doc); // fonts may differ from where the design was saved
     this.syncUi();
 
     new ResizeObserver(() => this.requestRender()).observe(this.stage);
@@ -227,7 +230,7 @@ class Editor {
       const dist = distToPolylines(local, g.lines) * s;
       const half = (el.width * Math.sqrt(Math.abs(el.sx * el.sy))) / 2;
       if (dist <= half + tol) return el;
-      if (el.fill !== 'none' && pointInPolylines(local, g.lines)) return el;
+      if ((el.fill !== 'none' || el.kind === 'text') && pointInPolylines(local, g.lines)) return el;
       if (!strict && el.kind === 'template' && el.template !== 's-scroll' && el.template !== 'c-scroll' && el.template !== 'v-scroll') {
         const fm = invert(frameMatrix(el));
         const q = apply(fm, p);
@@ -263,6 +266,7 @@ class Editor {
     this.hover = null;
     this.stage.dataset.cursor = '';
     this.requestRender();
+    if (this.history) this.syncUi(); // shows or hides the text settings
   }
 
   bindCanvas() {
@@ -295,6 +299,8 @@ class Editor {
   onPointerDown(e) {
     if (e.pointerType === 'pen') this.lastPen = performance.now();
     if (e.pointerType === 'mouse' && e.button !== 0 && e.button !== 1) return;
+    // Finish a pending edit in the properties panel (e.g. typed text) before touching the canvas.
+    if (document.activeElement?.closest?.('#properties')) document.activeElement.blur();
     this.closeSheets();
     e.preventDefault();
     try {
@@ -323,6 +329,11 @@ class Editor {
       return;
     }
     const p = this.toCanvas(sp);
+    if (this.tool === 'text') {
+      this.pointers.delete(e.pointerId);
+      this.textClick(p);
+      return;
+    }
     if (this.tool === 'draw') this.startStroke(e, p);
     else if (this.tool === 'eraser') {
       this.begin();
@@ -757,6 +768,72 @@ class Editor {
     this.commit(addElements(this.doc, [el]), [el.id]);
   }
 
+  // ---- text
+
+  /** Bounding box path of a text element, measured with the fonts of this browser. */
+  textPath(el) {
+    return textBoxPath(this.renderer.measureText(el) ?? estimateTextBox(el), el);
+  }
+
+  /** Re-measures text elements (without an undo step), e.g. after loading or importing. */
+  measureTexts(doc) {
+    let changed = false;
+    const elements = doc.elements.map((el) => {
+      if (el.kind !== 'text') return el;
+      const d = this.textPath(el);
+      if (d === el.d) return el;
+      changed = true;
+      return { ...el, d };
+    });
+    return changed ? { ...doc, elements } : doc;
+  }
+
+  /** Text tool: clicking a text selects it for editing, clicking elsewhere adds a new text. */
+  textClick(p) {
+    const hit = this.hitElement(p);
+    if (hit?.kind === 'text') {
+      this.setTool('select');
+      this.setSelection([hit.id]);
+    } else this.addText(p);
+    this.focusTextInput();
+  }
+
+  addText(at) {
+    const content = this.textStyle.content.trim() ? this.textStyle.content : DEFAULT_TEXT.content;
+    const text = normalizeText({ ...this.textStyle, content });
+    const proto = { kind: 'text', text, color: this.style.color, width: this.style.width };
+    const el = createElement({ ...proto, d: this.textPath(proto), x: at[0], y: at[1] });
+    this.setTool('select');
+    this.commit(addElements(this.doc, [el]), [el.id]);
+  }
+
+  focusTextInput() {
+    if (isMobileLayout() && !$('#properties').classList.contains('open')) this.toggleSheet('properties');
+    const input = $('#text-content');
+    input.focus({ preventScroll: true });
+    input.select();
+  }
+
+  selectedTexts() {
+    return this.selectedElements().filter((el) => el.kind === 'text');
+  }
+
+  /** Applies text properties to the defaults and to the selected text elements. */
+  applyText(patch, { liveOnly = false } = {}) {
+    Object.assign(this.textStyle, patch);
+    const ids = this.selectedTexts().map((el) => el.id);
+    if (ids.length) {
+      if (!this.txStart) this.begin();
+      // Patches are absolute values, so they apply on top of edits still running (e.g. typing).
+      this.live(updateElements(this.doc, ids, (el) => {
+        const next = { ...el, text: normalizeText({ ...el.text, ...patch }) };
+        return { text: next.text, d: this.textPath(next) };
+      }));
+      if (!liveOnly) this.end();
+    }
+    this.syncUi();
+  }
+
   /** Applies a style change to the defaults and, if any, the selected elements. */
   applyStyle(patch, { liveOnly = false } = {}) {
     Object.assign(this.style, patch);
@@ -768,6 +845,10 @@ class Editor {
           if (el.width === 0) out.fill = patch.color; // filled shapes without outline: recolor the fill
         }
         if ('width' in patch && el.kind === 'path' && el.width === 0 && el.fill !== 'none') delete out.width;
+        if (el.kind === 'text') {
+          delete out.paper;
+          if ('width' in out) out.d = this.textPath({ ...el, ...out });
+        }
         return out;
       });
       this.live(doc);
@@ -820,7 +901,8 @@ class Editor {
       await this.ask({ title: 'Import failed', message: `${file.name}: ${msg}\nYour current design was not changed.`, buttons: [{ label: 'OK', value: true, kind: 'primary' }] });
       return;
     }
-    const { doc: imported, skipped } = result;
+    const { skipped } = result;
+    const imported = this.measureTexts(result.doc);
     if (!imported.elements.length && imported.background === '#ffffff') {
       await this.ask({ title: 'Nothing to import', message: `${file.name} contains no shapes the editor can display.\nYour current design was not changed.`, buttons: [{ label: 'OK', value: true, kind: 'primary' }] });
       return;
@@ -1077,6 +1159,8 @@ class Editor {
     const paper = $('#paper-look');
     paper.addEventListener('change', () => this.applyStyle({ paper: paper.checked }));
 
+    this.buildTextProperties();
+
     const cw = $('#canvas-width');
     const ch = $('#canvas-height');
     const applySize = () => {
@@ -1103,6 +1187,63 @@ class Editor {
     this.syncCanvasInputs();
   }
 
+  buildTextProperties() {
+    const font = $('#text-font');
+    for (const f of FONTS) {
+      const o = document.createElement('option');
+      o.value = f.id;
+      o.textContent = f.name;
+      o.style.fontFamily = f.family;
+      font.append(o);
+    }
+    font.addEventListener('change', () => this.applyText({ font: font.value }));
+
+    const content = $('#text-content');
+    content.addEventListener('input', () => this.applyText({ content: content.value }, { liveOnly: true }));
+    content.addEventListener('change', () => {
+      const ids = this.selectedTexts().map((el) => el.id);
+      if (!content.value.trim() && ids.length) {
+        // An empty text would be invisible: remove it (one undo step together with the typing).
+        if (!this.txStart) this.begin();
+        this.live(removeElements(this.doc, ids));
+        this.selection = this.selection.filter((id) => !ids.includes(id));
+        this.textStyle.content = DEFAULT_TEXT.content;
+      }
+      this.end();
+      this.syncUi();
+    });
+    content.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        content.blur();
+      }
+    });
+
+    $('#text-bold').addEventListener('click', () => this.applyText({ bold: !this.textStyle.bold }));
+    $('#text-italic').addEventListener('click', () => this.applyText({ italic: !this.textStyle.italic }));
+    for (const b of $$('[data-case]')) b.addEventListener('click', () => this.applyText({ case: b.dataset.case }));
+
+    const slider = (id, key) => {
+      const input = $(id);
+      input.addEventListener('input', () => this.applyText({ [key]: Number(input.value) }, { liveOnly: true }));
+      input.addEventListener('change', () => this.applyText({ [key]: Number(input.value) }));
+    };
+    slider('#text-size', 'size');
+    slider('#text-grow', 'grow');
+    slider('#text-spacing', 'spacing');
+    const sizeNumber = $('#text-size-number');
+    sizeNumber.addEventListener('change', () => {
+      const v = Number(sizeNumber.value);
+      if (Number.isFinite(v) && v > 0) this.applyText({ size: normalizeText({ size: v }).size });
+      else this.syncUi();
+    });
+
+    $('#text-add').addEventListener('click', () => {
+      this.addText(this.visibleCenter());
+      this.focusTextInput();
+    });
+  }
+
   syncCanvasInputs() {
     $('#canvas-width').value = this.doc.width;
     $('#canvas-height').value = this.doc.height;
@@ -1114,8 +1255,11 @@ class Editor {
     const sel = this.selectedElements();
     if (sel.length === 1) {
       // Show the selected element's own style.
-      this.style = { ...this.style, color: sel[0].color, width: sel[0].width || this.style.width, paper: sel[0].paper };
+      this.style = { ...this.style, color: sel[0].color, width: sel[0].width || this.style.width, paper: sel[0].kind === 'text' ? this.style.paper : sel[0].paper };
     }
+    const texts = sel.filter((el) => el.kind === 'text');
+    if (texts.length) this.textStyle = { ...texts[0].text };
+    this.syncTextUi(this.tool === 'text' || texts.length > 0, sel.length > 0 && texts.length === sel.length);
     for (const b of $$('[data-needs-selection]')) b.disabled = !sel.length;
     $('[data-action="undo"]').disabled = !this.history.canUndo();
     $('[data-action="redo"]').disabled = !this.history.canRedo();
@@ -1134,10 +1278,32 @@ class Editor {
     if (document.activeElement?.type !== 'number') this.syncCanvasInputs();
   }
 
+  syncTextUi(visible, onlyText) {
+    $('#text-settings').hidden = !visible;
+    $('#properties-title').textContent = visible ? 'Text' : 'Strip';
+    $('#paper-look').closest('section').hidden = onlyText; // text outlines have no paper look
+    if (!visible) return;
+    const t = this.textStyle;
+    const content = $('#text-content');
+    if (document.activeElement !== content) content.value = t.content;
+    $('#text-font').value = t.font;
+    $('#text-bold').setAttribute('aria-pressed', String(t.bold));
+    $('#text-italic').setAttribute('aria-pressed', String(t.italic));
+    for (const b of $$('[data-case]')) b.setAttribute('aria-pressed', String(b.dataset.case === t.case));
+    $('#text-size').value = t.size;
+    if (document.activeElement !== $('#text-size-number')) $('#text-size-number').value = t.size;
+    $('#text-size-value').textContent = `${t.size} px`;
+    $('#text-grow').value = t.grow;
+    $('#text-grow-value').textContent = `${t.grow} px`;
+    $('#text-spacing').value = t.spacing;
+    $('#text-spacing-value').textContent = `${t.spacing} px`;
+  }
+
   bindKeyboard() {
     window.addEventListener('keydown', (e) => {
       const t = e.target;
-      const typing = t instanceof HTMLInputElement && !['range', 'checkbox', 'color'].includes(t.type);
+      const typing = (t instanceof HTMLInputElement && !['range', 'checkbox', 'color'].includes(t.type)) ||
+        t instanceof HTMLTextAreaElement || t instanceof HTMLSelectElement;
       if (typing || $('#dialog').open || $('#help').open) return;
       const mod = e.ctrlKey || e.metaKey;
       const key = e.key.toLowerCase();
@@ -1199,7 +1365,7 @@ class Editor {
         e.preventDefault();
         return this.action('help');
       }
-      const map = { v: () => this.setTool('select'), b: () => this.setTool('draw'), p: () => this.setTool('draw'), e: () => this.setTool('eraser'),
+      const map = { v: () => this.setTool('select'), b: () => this.setTool('draw'), p: () => this.setTool('draw'), e: () => this.setTool('eraser'), t: () => this.setTool('text'),
         ']': () => this.action('forward'), '[': () => this.action('backward'), '}': () => this.action('forward', { toEnd: true }),
         '{': () => this.action('backward', { toEnd: true }), '+': () => this.zoomCenter(1.25), '=': () => this.zoomCenter(1.25),
         '-': () => this.zoomCenter(0.8), '0': () => this.fitView(), '1': () => this.action('zoom-reset') };

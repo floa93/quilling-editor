@@ -13,6 +13,7 @@ import {
   fmt,
   matrixToString,
 } from './geometry.js';
+import { normalizeText, estimateTextBox, textBoxPath } from './text.js';
 
 export const DEFAULT_WIDTH = 800;
 export const DEFAULT_HEIGHT = 800;
@@ -72,12 +73,14 @@ const NAMED_COLORS = {
 
 /**
  * Element fields:
- *  id, kind ('stroke' | 'template' | 'path'), template (name, for kind 'template'),
+ *  id, kind ('stroke' | 'template' | 'path' | 'text'), template (name, for kind 'template'),
+ *  text (text properties, for kind 'text', see text.js),
  *  d (path data in local coordinates), color, width (strip width), fill ('none' or color),
  *  paper (paper-strip look), x/y (where the pivot lands), rotation (deg), sx/sy (scale),
  *  pivot [px, py] (local rotation/scale origin), base (matrix applied before everything, or null).
  */
 export function createElement(fields) {
+  const isText = fields.kind === 'text';
   const el = {
     id: fields.id || newId(),
     kind: fields.kind || 'path',
@@ -85,8 +88,8 @@ export function createElement(fields) {
     d: fields.d,
     color: normalizeColor(fields.color, '#000000'),
     width: Number.isFinite(fields.width) ? fields.width : 3,
-    fill: fields.fill && fields.fill !== 'none' ? normalizeColor(fields.fill, 'none') : 'none',
-    paper: fields.paper !== undefined ? Boolean(fields.paper) : fields.kind !== 'path',
+    fill: !isText && fields.fill && fields.fill !== 'none' ? normalizeColor(fields.fill, 'none') : 'none',
+    paper: isText ? false : fields.paper !== undefined ? Boolean(fields.paper) : fields.kind !== 'path',
     x: fields.x ?? 0,
     y: fields.y ?? 0,
     rotation: fields.rotation ?? 0,
@@ -95,6 +98,10 @@ export function createElement(fields) {
     pivot: fields.pivot || null,
     base: fields.base && !isIdentity(fields.base) ? fields.base : null,
   };
+  if (isText) {
+    el.text = normalizeText(fields.text);
+    if (typeof el.d !== 'string') el.d = textBoxPath(estimateTextBox(el), el);
+  }
   if (!el.pivot) {
     // Pivot defaults to the center of the geometry, and the element is placed so that
     // it does not move (unless x/y were explicitly given).
