@@ -161,12 +161,12 @@ export function localBox(el) {
   return geometry(el).box;
 }
 
-/** Corners of the element's (rotated) box in canvas coordinates: tl, tr, br, bl. */
+/** Corners of the element's (rotated) box in canvas coordinates: tl, tr, br, bl. `pad` is in local units. */
 export function elementCorners(el, pad = 0) {
   const b = localBox(el);
   const m = frameMatrix(el);
-  const px = pad / Math.abs(el.sx || 1);
-  const py = pad / Math.abs(el.sy || 1);
+  const px = pad;
+  const py = pad;
   return [
     [b.x - px, b.y - py],
     [b.x + b.width + px, b.y - py],

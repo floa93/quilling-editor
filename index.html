@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content" />
+    <title>Quilling Editor</title>
+    <meta name="description" content="Design paper quilling artwork in your browser: draw paper strips or drag in classic quilling shapes, then export to SVG." />
+    <meta name="theme-color" content="#2f4858" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Quilling" />
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="icon" href="icons/icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
+    <link rel="stylesheet" href="styles.css" />
+    <script type="module" src="src/app.js"></script>
+  </head>
+  <body>
+    <div id="app">
+      <header class="topbar">
+        <div class="brand" title="Quilling Editor">
+          <img src="icons/icon.svg" alt="" width="28" height="28" />
+          <span>Quilling&nbsp;Editor</span>
+        </div>
+
+        <div class="group desktop-only" role="toolbar" aria-label="Tools">
+          <button class="tool" data-tool="select" data-icon="select" title="Select (V)" aria-label="Select tool (V)"></button>
+          <button class="tool" data-tool="draw" data-icon="draw" title="Draw (B)" aria-label="Draw tool (B)"></button>
+          <button class="tool" data-tool="eraser" data-icon="eraser" title="Eraser (E)" aria-label="Eraser tool (E)"></button>
+        </div>
+
+        <div class="group" role="toolbar" aria-label="History">
+          <button data-action="undo" data-icon="undo" title="Undo (Ctrl/Cmd+Z)" aria-label="Undo"></button>
+          <button data-action="redo" data-icon="redo" title="Redo (Ctrl/Cmd+Shift+Z or Ctrl+Y)" aria-label="Redo"></button>
+        </div>
+
+        <div class="group desktop-only" role="toolbar" aria-label="Arrange">
+          <button data-action="delete" data-needs-selection data-icon="delete" title="Delete selection (Delete)" aria-label="Delete selection"></button>
+          <button data-action="duplicate" data-needs-selection data-icon="duplicate" title="Duplicate (Ctrl/Cmd+D)" aria-label="Duplicate selection"></button>
+          <button data-action="forward" data-needs-selection data-icon="forward" title="Bring forward (]); Shift: to front" aria-label="Bring forward"></button>
+          <button data-action="backward" data-needs-selection data-icon="backward" title="Send backward ([); Shift: to back" aria-label="Send backward"></button>
+        </div>
+
+        <div class="group desktop-only" role="toolbar" aria-label="View">
+          <button data-action="zoom-out" data-icon="zoomOut" title="Zoom out (-)" aria-label="Zoom out"></button>
+          <button data-action="zoom-reset" class="zoom-label" title="Zoom level, click for 100%" aria-label="Reset zoom to 100%">100%</button>
+          <button data-action="zoom-in" data-icon="zoomIn" title="Zoom in (+)" aria-label="Zoom in"></button>
+          <button data-action="fit" data-icon="fit" title="Fit to screen / reset view (0)" aria-label="Fit to screen"></button>
+        </div>
+
+        <div class="group desktop-only" role="toolbar" aria-label="File">
+          <button data-action="new" data-icon="new" title="New / clear canvas" aria-label="New design"></button>
+          <button data-action="import" data-icon="import" title="Import SVG (or drop a file on the canvas)" aria-label="Import SVG"><span class="label">Import</span></button>
+          <button data-action="export" data-icon="export" title="Export SVG" aria-label="Export SVG"><span class="label">Export</span></button>
+        </div>
+
+        <button class="mobile-only" data-toggle="more" data-icon="more" title="More actions" aria-label="More actions" aria-expanded="false"></button>
+      </header>
+
+      <aside id="library" class="panel sheet" aria-label="Shape templates">
+        <div class="sheet-header">
+          <h2>Shapes</h2>
+          <button class="mobile-only" data-close data-icon="close" title="Close" aria-label="Close shapes"></button>
+        </div>
+        <p class="hint">Drag a shape onto the canvas, or tap to place it in the center.</p>
+        <div class="template-grid" role="list"></div>
+      </aside>
+
+      <main id="stage" aria-label="Canvas">
+        <svg id="canvas" role="application" aria-label="Quilling canvas"></svg>
+        <div class="selection-bar mobile-only" role="toolbar" aria-label="Selection actions" hidden>
+          <button data-action="delete" data-icon="delete" title="Delete selection" aria-label="Delete selection"></button>
+          <button data-action="duplicate" data-icon="duplicate" title="Duplicate" aria-label="Duplicate selection"></button>
+          <button data-action="forward" data-icon="forward" title="Bring forward" aria-label="Bring forward"></button>
+          <button data-action="backward" data-icon="backward" title="Send backward" aria-label="Send backward"></button>
+        </div>
+      </main>
+
+      <aside id="properties" class="panel sheet" aria-label="Properties">
+        <div class="sheet-header">
+          <h2>Strip</h2>
+          <button class="mobile-only" data-close data-icon="close" title="Close" aria-label="Close properties"></button>
+        </div>
+        <p class="selection-note" hidden></p>
+        <section>
+          <h3>Color</h3>
+          <div class="swatches" role="radiogroup" aria-label="Strip color"></div>
+          <div class="row">
+            <input type="color" id="color-picker" title="Custom color" aria-label="Custom color picker" />
+            <input type="text" id="color-hex" inputmode="text" autocomplete="off" spellcheck="false" maxlength="7" title="Hex color, e.g. #d62839" aria-label="Hex color" />
+          </div>
+        </section>
+        <section>
+          <h3><label for="strip-width">Strip width</label> <output id="strip-width-value">4 px</output></h3>
+          <input type="range" id="strip-width" min="1" max="20" step="0.5" value="4" title="Paper strip width (1–20 px)" />
+        </section>
+        <section>
+          <label class="check" title="Shade the strip edges like real paper">
+            <input type="checkbox" id="paper-look" checked /> Paper strip look
+          </label>
+        </section>
+        <section class="canvas-settings">
+          <h2>Canvas</h2>
+          <div class="row">
+            <label title="Canvas width in px">W <input type="number" id="canvas-width" min="50" max="5000" step="1" inputmode="numeric" /></label>
+            <label title="Canvas height in px">H <input type="number" id="canvas-height" min="50" max="5000" step="1" inputmode="numeric" /></label>
+          </div>
+          <div class="row">
+            <label for="canvas-bg">Background</label>
+            <input type="color" id="canvas-bg" title="Canvas background color" aria-label="Canvas background color" />
+          </div>
+        </section>
+      </aside>
+
+      <nav class="bottombar mobile-only" aria-label="Tools">
+        <button class="tool" data-tool="select" data-icon="select" title="Select (V)" aria-label="Select tool"><span>Select</span></button>
+        <button class="tool" data-tool="draw" data-icon="draw" title="Draw (B)" aria-label="Draw tool"><span>Draw</span></button>
+        <button class="tool" data-tool="eraser" data-icon="eraser" title="Eraser (E)" aria-label="Eraser tool"><span>Erase</span></button>
+        <button data-toggle="library" data-icon="shapes" title="Shape templates" aria-label="Shape templates" aria-expanded="false"><span>Shapes</span></button>
+        <button data-toggle="properties" data-icon="style" title="Color and width" aria-label="Color and width" aria-expanded="false"><span>Style</span></button>
+      </nav>
+
+      <div id="more" class="sheet menu-sheet mobile-only" aria-label="More actions">
+        <div class="sheet-header">
+          <h2>More</h2>
+          <button data-close data-icon="close" title="Close" aria-label="Close menu"></button>
+        </div>
+        <div class="menu-grid">
+          <button data-action="zoom-in" data-icon="zoomIn" title="Zoom in"><span>Zoom in</span></button>
+          <button data-action="zoom-out" data-icon="zoomOut" title="Zoom out"><span>Zoom out</span></button>
+          <button data-action="fit" data-icon="fit" title="Fit to screen"><span>Fit</span></button>
+          <button data-action="new" data-icon="new" title="New / clear canvas"><span>New</span></button>
+          <button data-action="import" data-icon="import" title="Import SVG"><span>Import</span></button>
+          <button data-action="export" data-icon="export" title="Export SVG"><span>Export</span></button>
+        </div>
+      </div>
+    </div>
+
+    <dialog id="dialog">
+      <form method="dialog">
+        <h2 class="dialog-title"></h2>
+        <p class="dialog-message"></p>
+        <div class="dialog-buttons"></div>
+      </form>
+    </dialog>
+    <div id="toast" role="status" aria-live="polite"></div>
+    <input type="file" id="file-input" accept=".svg,image/svg+xml" hidden />
+    <noscript>The Quilling Editor needs JavaScript to run.</noscript>
+  </body>
+</html>
