@@ -232,6 +232,28 @@ export function reorder(doc, ids, dir) {
   return { ...doc, elements: els };
 }
 
+/** Normalizes an angle in degrees to (-180, 180]. */
+export function normalizeAngle(a) {
+  let r = a % 360;
+  if (r > 180) r -= 360;
+  if (r <= -180) r += 360;
+  return Math.round(r * 1000) / 1000;
+}
+
+/**
+ * Mirrors elements across the vertical (axis 'x', horizontal flip) or horizontal
+ * (axis 'y', vertical flip) line through `center`. A mirror is stored as a negative
+ * `sx`; a vertical flip is a horizontal flip plus a 180° turn, so `sy` stays positive
+ * and the rotation handle keeps pointing up.
+ */
+export function flipElements(doc, ids, axis, center) {
+  return updateElements(doc, ids, (el) =>
+    axis === 'x'
+      ? { x: 2 * center[0] - el.x, rotation: normalizeAngle(-el.rotation), sx: -el.sx }
+      : { y: 2 * center[1] - el.y, rotation: normalizeAngle(180 - el.rotation), sx: -el.sx },
+  );
+}
+
 /** Moves elements to the very front (dir = 1) or back (dir = -1). */
 export function reorderToEnd(doc, ids, dir) {
   const set = new Set(ids);

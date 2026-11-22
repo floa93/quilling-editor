@@ -40,6 +40,8 @@
           <button data-action="duplicate" data-needs-selection data-icon="duplicate" title="Duplicate (Ctrl/Cmd+D)" aria-label="Duplicate selection"></button>
           <button data-action="forward" data-needs-selection data-icon="forward" title="Bring forward (]); Shift: to front" aria-label="Bring forward"></button>
           <button data-action="backward" data-needs-selection data-icon="backward" title="Send backward ([); Shift: to back" aria-label="Send backward"></button>
+          <button data-action="flip-h" data-needs-selection data-icon="flipH" title="Flip horizontally (Shift+H)" aria-label="Flip horizontally"></button>
+          <button data-action="flip-v" data-needs-selection data-icon="flipV" title="Flip vertically (Shift+V)" aria-label="Flip vertically"></button>
         </div>
 
         <div class="group desktop-only" role="toolbar" aria-label="View">
@@ -52,7 +54,17 @@
         <div class="group desktop-only" role="toolbar" aria-label="File">
           <button data-action="new" data-icon="new" title="New / clear canvas" aria-label="New design"></button>
           <button data-action="import" data-icon="import" title="Import SVG (or drop a file on the canvas)" aria-label="Import SVG"><span class="label">Import</span></button>
-          <button data-action="export" data-icon="export" title="Export SVG" aria-label="Export SVG"><span class="label">Export</span></button>
+          <div class="menu-anchor">
+            <button data-menu="export-menu" data-icon="export" title="Export as SVG or PNG" aria-label="Export" aria-haspopup="menu" aria-expanded="false"><span class="label">Export</span><span class="chev" data-icon="chevron"></span></button>
+            <div id="export-menu" class="popover" role="menu" hidden>
+              <button role="menuitem" data-action="export" data-icon="export"><span><strong>SVG</strong><small>Editable, can be imported again · Ctrl/⌘ S</small></span></button>
+              <button role="menuitem" data-action="export-png" data-icon="image"><span><strong>PNG image</strong><small>For sharing and printing</small></span></button>
+            </div>
+          </div>
+        </div>
+
+        <div class="group desktop-only">
+          <button data-action="help" data-icon="help" title="Keyboard shortcuts and help (?)" aria-label="Help"></button>
         </div>
 
         <button class="mobile-only" data-toggle="more" data-icon="more" title="More actions" aria-label="More actions" aria-expanded="false"></button>
@@ -63,17 +75,23 @@
           <h2>Shapes</h2>
           <button class="mobile-only" data-close data-icon="close" title="Close" aria-label="Close shapes"></button>
         </div>
-        <p class="hint">Drag a shape onto the canvas, or tap to place it in the center.</p>
+        <p class="hint">Drag a shape onto the canvas, or click/tap it to place it in the center.</p>
         <div class="template-grid" role="list"></div>
       </aside>
 
       <main id="stage" aria-label="Canvas">
         <svg id="canvas" role="application" aria-label="Quilling canvas"></svg>
+        <p class="empty-hint" hidden>
+          <span class="desktop-only">Draw a paper strip, or drag a shape from the library to start. Press <kbd>?</kbd> for shortcuts.</span>
+          <span class="mobile-only">Draw with your finger, or add a shape from <strong>Shapes</strong>.</span>
+        </p>
         <div class="selection-bar mobile-only" role="toolbar" aria-label="Selection actions" hidden>
           <button data-action="delete" data-icon="delete" title="Delete selection" aria-label="Delete selection"></button>
           <button data-action="duplicate" data-icon="duplicate" title="Duplicate" aria-label="Duplicate selection"></button>
           <button data-action="forward" data-icon="forward" title="Bring forward" aria-label="Bring forward"></button>
           <button data-action="backward" data-icon="backward" title="Send backward" aria-label="Send backward"></button>
+          <button data-action="flip-h" data-icon="flipH" title="Flip horizontally" aria-label="Flip horizontally"></button>
+          <button data-action="flip-v" data-icon="flipV" title="Flip vertically" aria-label="Flip vertically"></button>
         </div>
       </main>
 
@@ -118,7 +136,7 @@
         <button class="tool" data-tool="draw" data-icon="draw" title="Draw (B)" aria-label="Draw tool"><span>Draw</span></button>
         <button class="tool" data-tool="eraser" data-icon="eraser" title="Eraser (E)" aria-label="Eraser tool"><span>Erase</span></button>
         <button data-toggle="library" data-icon="shapes" title="Shape templates" aria-label="Shape templates" aria-expanded="false"><span>Shapes</span></button>
-        <button data-toggle="properties" data-icon="style" title="Color and width" aria-label="Color and width" aria-expanded="false"><span>Style</span></button>
+        <button data-toggle="properties" data-icon="style" title="Color and width" aria-label="Color and width" aria-expanded="false"><i class="color-dot" aria-hidden="true"></i><span>Style</span></button>
       </nav>
 
       <div id="more" class="sheet menu-sheet mobile-only" aria-label="More actions">
@@ -130,9 +148,12 @@
           <button data-action="zoom-in" data-icon="zoomIn" title="Zoom in"><span>Zoom in</span></button>
           <button data-action="zoom-out" data-icon="zoomOut" title="Zoom out"><span>Zoom out</span></button>
           <button data-action="fit" data-icon="fit" title="Fit to screen"><span>Fit</span></button>
+          <button data-action="select-all" data-icon="selectAll" title="Select all"><span>Select all</span></button>
           <button data-action="new" data-icon="new" title="New / clear canvas"><span>New</span></button>
           <button data-action="import" data-icon="import" title="Import SVG"><span>Import</span></button>
-          <button data-action="export" data-icon="export" title="Export SVG"><span>Export</span></button>
+          <button data-action="export" data-icon="export" title="Export SVG (editable)"><span>Export SVG</span></button>
+          <button data-action="export-png" data-icon="image" title="Export PNG image"><span>Export PNG</span></button>
+          <button data-action="help" data-icon="help" title="Help"><span>Help</span></button>
         </div>
       </div>
     </div>
@@ -142,6 +163,53 @@
         <h2 class="dialog-title"></h2>
         <p class="dialog-message"></p>
         <div class="dialog-buttons"></div>
+      </form>
+    </dialog>
+    <dialog id="help" aria-labelledby="help-title">
+      <form method="dialog">
+        <div class="help-header">
+          <h2 id="help-title">Help</h2>
+          <button data-icon="close" title="Close" aria-label="Close help"></button>
+        </div>
+        <div class="help-body">
+          <section>
+            <h3>Getting started</h3>
+            <ul>
+              <li><strong>Draw</strong> paper strips freehand, or drag a <strong>shape</strong> onto the canvas (tap/click places it in the center).</li>
+              <li><strong>Select</strong> elements to move, scale (corner handles) and rotate (round handle). Color and strip width apply to the selection.</li>
+              <li>Your design is saved in this browser automatically. <strong>Export SVG</strong> to keep a file you can import again later.</li>
+            </ul>
+          </section>
+          <section>
+            <h3>Touch</h3>
+            <table>
+              <tr><td>Draw / move selection</td><td>One finger</td></tr>
+              <tr><td>Zoom and pan</td><td>Two-finger pinch and drag</td></tr>
+              <tr><td>Scale / rotate selection</td><td>Two fingers on the selected element</td></tr>
+              <tr><td>Apple Pencil / stylus</td><td>Draws; resting your hand does not</td></tr>
+            </table>
+          </section>
+          <section class="help-keys">
+            <h3>Keyboard</h3>
+            <table>
+              <tr><td>Select / Draw / Eraser</td><td><kbd>V</kbd> <kbd>B</kbd> <kbd>E</kbd></td></tr>
+              <tr><td>Undo / Redo</td><td><kbd>Ctrl/⌘ Z</kbd> &nbsp;<kbd>Ctrl/⌘ Shift Z</kbd></td></tr>
+              <tr><td>Cut / Copy / Paste</td><td><kbd>Ctrl/⌘ X</kbd> <kbd>C</kbd> <kbd>V</kbd></td></tr>
+              <tr><td>Duplicate</td><td><kbd>Ctrl/⌘ D</kbd></td></tr>
+              <tr><td>Delete</td><td><kbd>Delete</kbd> / <kbd>Backspace</kbd></td></tr>
+              <tr><td>Select all / Deselect</td><td><kbd>Ctrl/⌘ A</kbd> &nbsp;<kbd>Esc</kbd></td></tr>
+              <tr><td>Nudge 1 px (Shift: 10 px)</td><td><kbd>←</kbd> <kbd>↑</kbd> <kbd>→</kbd> <kbd>↓</kbd></td></tr>
+              <tr><td>Bring forward / Send backward</td><td><kbd>]</kbd> <kbd>[</kbd> (<kbd>Shift</kbd>: to front/back)</td></tr>
+              <tr><td>Flip horizontally / vertically</td><td><kbd>Shift H</kbd> &nbsp;<kbd>Shift V</kbd></td></tr>
+              <tr><td>Keep aspect ratio / snap 15°</td><td>Hold <kbd>Shift</kbd> while scaling / rotating</td></tr>
+              <tr><td>Cancel drag</td><td><kbd>Esc</kbd></td></tr>
+              <tr><td>Zoom in / out / 100% / fit</td><td><kbd>+</kbd> <kbd>-</kbd> <kbd>1</kbd> <kbd>0</kbd>, mouse wheel</td></tr>
+              <tr><td>Pan</td><td><kbd>Space</kbd> + drag, middle mouse button</td></tr>
+              <tr><td>Export SVG / Import</td><td><kbd>Ctrl/⌘ S</kbd> &nbsp;<kbd>Ctrl/⌘ O</kbd></td></tr>
+              <tr><td>This help</td><td><kbd>?</kbd></td></tr>
+            </table>
+          </section>
+        </div>
       </form>
     </dialog>
     <div id="toast" role="status" aria-live="polite"></div>

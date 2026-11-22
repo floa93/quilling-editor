@@ -1,8 +1,8 @@
 // Editor controller: state, tools, pointer/touch gestures, panels, import/export.
 import {
   createDocument, createElement, addElements, removeElements, updateElements, duplicateElements,
-  reorder, reorderToEnd, elementMatrix, frameMatrix, geometry, worldBox, unionBox, newId, clamp,
-  normalizeColor, PALETTE, MIN_STRIP, MAX_STRIP, MIN_CANVAS, MAX_CANVAS,
+  reorder, reorderToEnd, elementMatrix, frameMatrix, geometry, worldBox, newId, clamp,
+  normalizeColor, normalizeAngle, flipElements, PALETTE, MIN_CANVAS, MAX_CANVAS,
 } from './model.js';
 import {
   apply, invert, rotate as rotMatrix, rectsIntersect, distToPolylines, pointInPolylines,
@@ -20,6 +20,8 @@ const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 const MIN_ZOOM = 0.05;
 const MAX_ZOOM = 20;
 const EXPORT_NAME = 'quilling-design.svg';
+const PNG_NAME = 'quilling-design.png';
+const NUDGE_MERGE_MS = 800; // consecutive arrow-key nudges within this window form one undo step
 const coarse = () => matchMedia('(pointer: coarse)').matches;
 const isMobileLayout = () => matchMedia('(max-width: 899px)').matches;
 
@@ -44,6 +46,7 @@ class Editor {
     this.frame = 0;
     this.overlayInfo = null;
     this.hover = null;
+    this.lastNudge = null;
 
     installIcons();
     this.buildLibrary();
@@ -63,6 +66,9 @@ class Editor {
     });
     window.addEventListener('pagehide', () => this.autosave.flush());
     document.addEventListener('visibilitychange', () => document.hidden && this.autosave.flush());
+    if (!this.autosave.available) {
+      setTimeout(() => this.toast('Auto-save is unavailable in this browser mode. Export your design to keep it.', 6000), 800);
+    }
   }
 
   // ------------------------------------------------------------------ state
@@ -194,10 +200,16 @@ class Editor {
       toScreen: (p) => this.toScreen(p),
       handleSize: coarse() ? 22 : 11,
       band: this.gesture?.type === 'band' ? this.gesture.rect : null,
-      hover: this.tool === 'eraser' && this.hover ? this.doc.elements.find((e) => e.id === this.hover) : null,
+      hover: this.hoveredElement(),
     });
     const z = $('.zoom-label');
     if (z) z.textContent = `${Math.round(this.view.zoom * 100)}%`;
+  }
+
+  hoveredElement() {
+    if (!this.hover || this.gesture || this.selection.includes(this.hover)) return null;
+    if (this.tool !== 'eraser' && this.tool !== 'select') return null;
+    return this.doc.elements.find((e) => e.id === this.hover) ?? null;
   }
 
   // ------------------------------------------------------------------ hit testing
@@ -249,6 +261,7 @@ class Editor {
     }
     if (tool !== 'select' && this.selection.length) this.setSelection([]);
     this.hover = null;
+    this.stage.dataset.cursor = '';
     this.requestRender();
   }
 
@@ -259,6 +272,14 @@ class Editor {
     svg.addEventListener('pointerup', (e) => this.onPointerUp(e));
     svg.addEventListener('pointercancel', (e) => this.onPointerUp(e, true));
     svg.addEventListener('lostpointercapture', (e) => this.pointers.has(e.pointerId) && this.onPointerUp(e, true));
+    svg.addEventListener('pointerleave', (e) => {
+      if (e.pointerType !== 'mouse' || this.pointers.has(e.pointerId)) return;
+      this.stage.dataset.cursor = '';
+      if (this.hover) {
+        this.hover = null;
+        this.requestRender();
+      }
+    });
     svg.addEventListener('contextmenu', (e) => e.preventDefault());
     svg.addEventListener('wheel', (e) => {
       e.preventDefault();
@@ -310,6 +331,39 @@ class Editor {
     } else this.startSelect(e, sp, p);
   }
 
+  /** Mouse hover feedback: outline of the element under the pointer and a matching cursor. */
+  updateHover(sp) {
+    let id = null;
+    let cursor = '';
+    if (this.tool === 'eraser') {
+      id = this.hitElement(this.toCanvas(sp), { strict: true })?.id ?? null;
+    } else if (this.tool === 'select' && !this.spaceDown) {
+      const handle = this.selection.length ? this.hitHandle(sp) : null;
+      if (handle) cursor = handle.type === 'rotate' ? 'rotate' : this.cornerCursor(handle.corner);
+      else {
+        id = this.hitElement(this.toCanvas(sp))?.id ?? null;
+        if (id) cursor = 'move';
+      }
+    }
+    this.stage.dataset.cursor = cursor;
+    if (id !== this.hover) {
+      this.hover = id;
+      this.requestRender();
+    }
+  }
+
+  /** Resize cursor matching the on-screen direction of a (possibly rotated) corner handle. */
+  cornerCursor(i) {
+    const c = this.overlayInfo.corners[i];
+    const m = this.overlayInfo.center;
+    const deg = (Math.atan2(c[1] - m[1], c[0] - m[0]) * 180) / Math.PI;
+    const a = ((deg % 180) + 180) % 180;
+    if (a < 22.5 || a >= 157.5) return 'ew';
+    if (a < 67.5) return 'nwse';
+    if (a < 112.5) return 'ns';
+    return 'nesw';
+  }
+
   isPenDown() {
     return [...this.pointers.values()].some((p) => p.type === 'pen');
   }
@@ -318,13 +372,7 @@ class Editor {
     const ptr = this.pointers.get(e.pointerId);
     if (e.pointerType === 'pen') this.lastPen = performance.now();
     if (!ptr) {
-      if (this.tool === 'eraser' && e.pointerType === 'mouse') {
-        const id = this.hitElement(this.toCanvas(this.stagePoint(e)), { strict: true })?.id ?? null;
-        if (id !== this.hover) {
-          this.hover = id;
-          this.requestRender();
-        }
-      }
+      if (e.pointerType === 'mouse') this.updateHover(this.stagePoint(e));
       return;
     }
     ptr.sp = this.stagePoint(e);
@@ -424,6 +472,21 @@ class Editor {
     this.requestRender();
   }
 
+  /** Cancels the running pointer interaction (Escape); returns true if there was one. */
+  abortGesture() {
+    const g = this.gesture;
+    if (!g || g.type === 'idle') return false;
+    if (g.type === 'stroke') this.renderer.setLiveStroke(null);
+    else if (['move', 'scale', 'rotate', 'erase', 'touch-transform'].includes(g.type)) this.cancel();
+    else if (g.type === 'band') this.selection = g.initial;
+    this.stage.dataset.panning = this.spaceDown ? 'true' : 'false';
+    // Swallow the rest of the drag until the pointer is released.
+    this.gesture = g.pointerId !== undefined ? { type: 'idle', pointerId: g.pointerId } : null;
+    this.requestRender();
+    this.syncUi();
+    return true;
+  }
+
   // ---- drawing
 
   startStroke(e, p) {
@@ -481,7 +544,8 @@ class Editor {
       }
       return;
     }
-    const hit = this.hitElement(p);
+    // Fingers and pens are less precise than a mouse: be more forgiving with thin strips.
+    const hit = this.hitElement(p, { tolerance: e.pointerType === 'mouse' ? 6 : 14 });
     if (hit) {
       if (e.shiftKey) {
         const sel = this.selection.includes(hit.id) ? this.selection.filter((id) => id !== hit.id) : [...this.selection, hit.id];
@@ -621,6 +685,14 @@ class Editor {
       case 'backward':
         if (sel.length) this.commit(opts.toEnd ? reorderToEnd(this.doc, sel, -1) : reorder(this.doc, sel, -1));
         return;
+      case 'flip-h':
+      case 'flip-v':
+        if (sel.length) {
+          const c = selectionFrame(this.selectedElements()).corners;
+          const center = [(c[0][0] + c[2][0]) / 2, (c[0][1] + c[2][1]) / 2];
+          this.commit(flipElements(this.doc, sel, name === 'flip-h' ? 'x' : 'y', center));
+        }
+        return;
       case 'zoom-in':
         return this.zoomCenter(1.25);
       case 'zoom-out':
@@ -640,11 +712,21 @@ class Editor {
         return;
       case 'export':
         return this.exportFile();
+      case 'export-png':
+        return this.exportPng();
+      case 'help':
+        return $('#help').showModal();
       case 'select-all':
         this.setTool('select');
         return this.setSelection(this.doc.elements.map((e) => e.id));
       case 'copy':
-        this.clipboard = this.selectedElements();
+        if (sel.length) this.clipboard = this.selectedElements();
+        return;
+      case 'cut':
+        if (sel.length) {
+          this.clipboard = this.selectedElements();
+          this.commit(removeElements(this.doc, sel), []);
+        }
         return;
       case 'paste':
         if (this.clipboard.length) {
@@ -769,12 +851,37 @@ class Editor {
     if (skipped) this.toast(`Imported. ${skipped} unsupported item(s) were skipped.`);
   }
 
-  async exportFile() {
-    const text = exportSvg(this.doc);
-    const blob = new Blob([text], { type: 'image/svg+xml' });
+  exportFile() {
+    const blob = new Blob([exportSvg(this.doc)], { type: 'image/svg+xml' });
+    return this.saveFile(blob, EXPORT_NAME);
+  }
+
+  /** Renders the design (without editor UI) to a PNG at up to 2x resolution. */
+  async exportPng() {
+    const { width: w, height: h } = this.doc;
+    const scale = Math.min(2, 8192 / Math.max(w, h), Math.sqrt(16e6 / (w * h)));
+    try {
+      const img = new Image();
+      img.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(exportSvg(this.doc))}`;
+      await img.decode();
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.max(1, Math.round(w * scale));
+      canvas.height = Math.max(1, Math.round(h * scale));
+      canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+      const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
+      if (!blob) throw new Error('Canvas could not be encoded');
+      await this.saveFile(blob, PNG_NAME);
+    } catch (e) {
+      console.warn('PNG export failed:', e);
+      this.toast('PNG export is not supported in this browser. Please export as SVG instead.');
+    }
+  }
+
+  /** Shares the file on touch devices (native share sheet) where supported, else downloads it. */
+  async saveFile(blob, name) {
     if (coarse() && navigator.canShare) {
       try {
-        const file = new File([blob], EXPORT_NAME, { type: 'image/svg+xml' });
+        const file = new File([blob], name, { type: blob.type });
         if (navigator.canShare({ files: [file] })) {
           await navigator.share({ files: [file], title: 'Quilling design' });
           return;
@@ -787,7 +894,7 @@ class Editor {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = EXPORT_NAME;
+    a.download = name;
     document.body.append(a);
     a.click();
     a.remove();
@@ -801,11 +908,49 @@ class Editor {
     for (const b of $$('[data-action]')) {
       b.addEventListener('click', (e) => {
         if (b.closest('#more')) this.closeSheets();
+        if (b.closest('.popover')) this.closeMenus();
         this.action(b.dataset.action, { toEnd: e.shiftKey });
+      });
+    }
+    for (const b of $$('[data-menu]')) b.addEventListener('click', () => this.toggleMenu(b));
+    document.addEventListener('pointerdown', (e) => {
+      if (!e.target.closest?.('.menu-anchor')) this.closeMenus();
+    });
+    for (const menu of $$('.popover')) {
+      menu.addEventListener('keydown', (e) => {
+        const items = $$('button', menu);
+        const i = items.indexOf(document.activeElement);
+        if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+          e.preventDefault();
+          e.stopPropagation();
+          items[(i + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length].focus();
+        } else if (e.key === 'Escape' || e.key === 'Tab') {
+          const trigger = $(`[data-menu="${menu.id}"]`);
+          this.closeMenus();
+          if (e.key === 'Escape') {
+            e.stopPropagation();
+            trigger.focus();
+          }
+        }
       });
     }
     for (const b of $$('[data-toggle]')) b.addEventListener('click', () => this.toggleSheet(b.dataset.toggle));
     for (const b of $$('[data-close]')) b.addEventListener('click', () => this.closeSheets());
+  }
+
+  toggleMenu(trigger) {
+    const menu = document.getElementById(trigger.dataset.menu);
+    const open = menu.hidden;
+    this.closeMenus();
+    if (!open) return;
+    menu.hidden = false;
+    trigger.setAttribute('aria-expanded', 'true');
+    $('button', menu).focus({ focusVisible: false });
+  }
+
+  closeMenus() {
+    for (const m of $$('.popover')) m.hidden = true;
+    for (const b of $$('[data-menu]')) b.setAttribute('aria-expanded', 'false');
   }
 
   toggleSheet(id) {
@@ -984,6 +1129,8 @@ class Editor {
     $('#strip-width').value = this.style.width;
     $('#strip-width-value').textContent = `${this.style.width} px`;
     $('#paper-look').checked = this.style.paper;
+    $('.color-dot').style.background = this.style.color;
+    $('.empty-hint').hidden = this.doc.elements.length > 0;
     if (document.activeElement?.type !== 'number') this.syncCanvasInputs();
   }
 
@@ -991,9 +1138,16 @@ class Editor {
     window.addEventListener('keydown', (e) => {
       const t = e.target;
       const typing = t instanceof HTMLInputElement && !['range', 'checkbox', 'color'].includes(t.type);
-      if (typing || $('#dialog').open) return;
+      if (typing || $('#dialog').open || $('#help').open) return;
       const mod = e.ctrlKey || e.metaKey;
       const key = e.key.toLowerCase();
+      if (e.key === 'Escape') {
+        this.closeSheets();
+        this.closeMenus();
+        if (!this.abortGesture()) this.setSelection([]);
+        return;
+      }
+      if (this.gesture && this.gesture.type !== 'idle' && e.key !== ' ') return; // no edits mid-drag
       if (mod && key === 'z') {
         e.preventDefault();
         return e.shiftKey ? this.redo() : this.undo();
@@ -1006,6 +1160,15 @@ class Editor {
         e.preventDefault();
         return this.action('duplicate');
       }
+      if (mod && key === 's') {
+        e.preventDefault();
+        return this.action('export');
+      }
+      if (mod && key === 'o') {
+        e.preventDefault();
+        return this.action('import');
+      }
+      if (mod && key === 'x') return this.action('cut');
       if (mod && key === 'c') return this.action('copy');
       if (mod && key === 'v') return this.action('paste');
       if (mod && key === 'a') {
@@ -1023,20 +1186,23 @@ class Editor {
         e.preventDefault();
         return this.action('delete');
       }
-      if (e.key === 'Escape') {
-        this.closeSheets();
-        return this.setSelection([]);
-      }
       const nudge = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[e.key];
       if (nudge && this.selection.length) {
         e.preventDefault();
-        const step = e.shiftKey ? 10 : 1;
-        return this.commit(updateElements(this.doc, this.selection, (el) => ({ x: el.x + nudge[0] * step, y: el.y + nudge[1] * step })));
+        return this.nudge(nudge, e.shiftKey ? 10 : 1);
+      }
+      if (e.shiftKey && (key === 'h' || key === 'v')) {
+        e.preventDefault();
+        return this.action(key === 'h' ? 'flip-h' : 'flip-v');
+      }
+      if (e.key === '?') {
+        e.preventDefault();
+        return this.action('help');
       }
       const map = { v: () => this.setTool('select'), b: () => this.setTool('draw'), p: () => this.setTool('draw'), e: () => this.setTool('eraser'),
         ']': () => this.action('forward'), '[': () => this.action('backward'), '}': () => this.action('forward', { toEnd: true }),
         '{': () => this.action('backward', { toEnd: true }), '+': () => this.zoomCenter(1.25), '=': () => this.zoomCenter(1.25),
-        '-': () => this.zoomCenter(0.8), '0': () => this.fitView() };
+        '-': () => this.zoomCenter(0.8), '0': () => this.fitView(), '1': () => this.action('zoom-reset') };
       if (map[e.key] || map[key]) {
         e.preventDefault();
         (map[e.key] || map[key])();
@@ -1052,6 +1218,18 @@ class Editor {
       this.spaceDown = false;
       this.stage.dataset.panning = 'false';
     });
+  }
+
+  /** Moves the selection; a burst of nudges is merged into a single undo step. */
+  nudge([dx, dy], step) {
+    const doc = updateElements(this.doc, this.selection, (el) => ({ x: el.x + dx * step, y: el.y + dy * step }));
+    const now = performance.now();
+    const last = this.lastNudge;
+    if (last && last.doc === this.doc && now - last.time < NUDGE_MERGE_MS) {
+      this.doc = doc;
+      this.changed();
+    } else this.commit(doc);
+    this.lastNudge = { doc: this.doc, time: now };
   }
 
   /** Keeps bottom sheets above the on-screen keyboard (iOS does not resize the layout). */
@@ -1092,21 +1270,19 @@ class Editor {
     });
   }
 
-  toast(message) {
+  toast(message, duration = 3500) {
     const t = $('#toast');
     t.textContent = message;
     t.classList.add('show');
     clearTimeout(this.toastTimer);
-    this.toastTimer = setTimeout(() => t.classList.remove('show'), 3500);
+    this.toastTimer = setTimeout(() => t.classList.remove('show'), duration);
   }
 }
 
-const normalizeAngle = (a) => {
-  let r = a % 360;
-  if (r > 180) r -= 360;
-  if (r <= -180) r += 360;
-  return Math.round(r * 1000) / 1000;
-};
+// Offline support for the installed app (network-first, so updates show up immediately).
+if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
+  navigator.serviceWorker.register('sw.js').catch((e) => console.warn('Service worker not registered:', e));
+}
 
 // Exposed for debugging and automated browser checks.
 window.quillingEditor = new Editor();

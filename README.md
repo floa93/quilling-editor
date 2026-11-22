@@ -14,10 +14,12 @@ database and no runtime dependencies. Your current design is auto-saved in the b
 
 - **Draw**: smoothed vector strokes with an optional paper-strip look, color palette plus custom color, strip width 1–20 px
 - **Shapes**: 12 quilling templates (tight/loose coil, teardrop, marquise, square, triangle, half moon, heart, leaf, S/C/V-scroll) by drag and drop or tap
-- **Edit**: select, shift-click/rubber-band multi-select, move, scale (Shift keeps the aspect ratio), rotate (Shift snaps to 15°), recolor, duplicate, copy/paste, z-order, delete, eraser
+- **Edit**: select, shift-click/rubber-band multi-select, move, scale (Shift keeps the aspect ratio), rotate (Shift snaps to 15°), flip horizontally/vertically, recolor, duplicate, cut/copy/paste, z-order, delete, eraser; hover outlines and resize/rotate cursors show what a drag will do, and `Esc` cancels a drag
 - **Undo/redo** with 100 steps
 - **SVG export/import**: lossless round trip for the editor's own files; generic SVGs are imported as editable paths and sanitized first
-- **Mobile**: bottom toolbar, bottom sheets, pinch zoom and two-finger pan, two-finger scale/rotate of the selection, pen palm rejection, installable as a home-screen app
+- **PNG export**: a 2× resolution image of the design for sharing or printing (Export menu)
+- **Mobile**: bottom toolbar, bottom sheets, pinch zoom and two-finger pan, two-finger scale/rotate of the selection, pen palm rejection, installable as a home-screen app that also works offline (service worker)
+- **Help**: `?` (or the help button) lists all shortcuts and touch gestures
 
 ### Keyboard shortcuts
 
@@ -26,12 +28,16 @@ database and no runtime dependencies. Your current design is auto-saved in the b
 | Select / Draw / Eraser | `V` / `B` / `E` |
 | Undo / Redo | `Ctrl/Cmd+Z` / `Ctrl/Cmd+Shift+Z` or `Ctrl+Y` |
 | Delete | `Delete` / `Backspace` |
-| Duplicate / Copy / Paste | `Ctrl/Cmd+D` / `Ctrl/Cmd+C` / `Ctrl/Cmd+V` |
+| Duplicate / Cut / Copy / Paste | `Ctrl/Cmd+D` / `Ctrl/Cmd+X` / `Ctrl/Cmd+C` / `Ctrl/Cmd+V` |
+| Flip horizontally / vertically | `Shift+H` / `Shift+V` |
 | Bring forward / Send backward | `]` / `[` (with Shift: to front / to back) |
 | Select all / Deselect | `Ctrl/Cmd+A` / `Esc` |
-| Nudge selection | Arrow keys (with Shift: 10 px) |
+| Nudge selection | Arrow keys (with Shift: 10 px); a burst of nudges is one undo step |
+| Cancel the current drag | `Esc` |
 | Zoom | Mouse wheel, `+` / `-` |
-| Fit to screen | `0` |
+| Zoom 100% / Fit to screen | `1` / `0` |
+| Export SVG / Import SVG | `Ctrl/Cmd+S` / `Ctrl/Cmd+O` |
+| Help | `?` |
 | Pan | Space + drag or middle mouse button |
 
 ## Run locally
@@ -50,6 +56,7 @@ Because the app uses ES modules, open it through a web server (as `npm start` do
 
 ```
 index.html, styles.css, manifest.webmanifest, icons/   static site
+sw.js              service worker (network-first, offline fallback)
 src/app.js         editor controller: tools, gestures, panels, import/export UI
 src/renderer.js    renders the document and the selection overlay into the SVG canvas
 src/model.js       document/element model (immutable updates, transforms, z-order)
